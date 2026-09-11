@@ -1,0 +1,459 @@
+# Modifications made for this study to the Coral3D morphometrics code
+#
+# Upstream: Coral3Dmorphomeasures (data and scripts of Ramirez-Portilla C, Bieger I,
+# Belleman RG, Wilke T, Flot J-F, Baird AH, Harii S, Sinniger F, Kaandorp JA (2022).
+# Quantitative three-dimensional morphological analysis supports species discrimination
+# in complex-shaped and taxonomically challenging corals. Front. Mar. Sci.).
+# The upstream code carries no licence and is therefore NOT redistributed here; this
+# file contains only a zero-context diff (git diff -U0) of the files we changed.
+#
+# Paths below use our local layout (package folder "coral3dcodeTest"); upstream
+# locations (relative to 3D_based_measures_estimation/) are:
+#   skelCodes/extract_lines.py          <- Medial_axis_skeleton_based/skeleton_transformation/extract_lines.py
+#   skelCodes/post_skel.py              <- Medial_axis_skeleton_based/skeleton_transformation/post_skel.py
+#   skelCodes/skeletonization.py        <- Medial_axis_skeleton_based/skeleton_transformation/skeletonization.py
+#   helpers/itk_skel/test/src/CMakeLists.txt <- helpers/itk_skel/CMakeLists.txt
+# All other Coral3D files we import (skelCodes/pre_skel.py, basic_skeleton_measures.py,
+# helpers/load_data.py, helpers/itk_skel/skel_itk.cxx, ...) are used unmodified, except
+# helpers/local_directories.py, where only ROOT was set to a local checkout path as the
+# upstream comment instructs (not included).
+# Line endings were normalised to LF before diffing (the upstream files use CRLF).
+# Apply to LF-normalised copies arranged in the layout above with:
+#   git apply --unidiff-zero coral3d_modifications.patch
+#
+diff --git a/skelCodes/extract_lines.py b/skelCodes/extract_lines.py
+index 90d0d21..652b1a4 100644
+--- a/skelCodes/extract_lines.py
++++ b/skelCodes/extract_lines.py
+@@ -21 +21 @@ class SkelVoxToGraph(vtk.vtkProgrammableFilter):
+-		self.offs18_6 = []
++		self.offs18_6 = []    
+diff --git a/skelCodes/post_skel.py b/skelCodes/post_skel.py
+index b66351b..d2692d0 100644
+--- a/skelCodes/post_skel.py
++++ b/skelCodes/post_skel.py
+@@ -2 +2 @@ import vtk
+-import getJunctionEndPointIds
++from skelCodes.basic_skeleton_measures import *
+@@ -9,3 +9,2 @@ def postProcessSkeleton(line_data, poly_data, min_size_end=4):
+-	
+-	# assign medial thickness to vertices
+-	line_data = cleanBranches(line_data, min_size_end)
++    # assign medial thickness to vertices
++    cleanBranches(line_data, min_size_end)
+@@ -14,11 +13,9 @@ def postProcessSkeleton(line_data, poly_data, min_size_end=4):
+-
+-
+-def cleanBranches(line_data, min_size_end = 4):
+-	
+-	br = getJunctionEndPointIds(line_data)
+-	end_br = br['end_branches']
+-	end_p = br['end_points']	
+-	line_data = reverseEndBranches(line_data, end_p, end_br)
+-	line_data = deleteShortEndBranches(line_data, end_br, min_end_br_length)
+-	line_data = mergeBranches(line_data)
+-	return line_data
++def cleanBranches(line_data, min_end_br_length = 4):
++    
++    br = getJunctionEndPointIds(line_data)
++    end_br = br['end_branches']
++    end_p = br['end_points']    
++    line_data = reverseEndBranches(line_data, end_p, end_br)
++    line_data = deleteShortEndBranches(line_data, end_br, min_end_br_length)
++    line_data = mergeBranches(line_data)
++    return line_data
+@@ -28,8 +25,8 @@ def cleanSkeleton(line_data, poly_data=None, change_thick = True, \
+-		min_end_br_length = 4):
+-	"""
+-	Clean skeleton graph: short terminal branches are removed and connecting 
+-	branches are merged, end branch vertices are ordered (end point is point ID 
+-	0 of cell). Medial thickness can be redefined. Unconnected components are
+-	removed. 
+-	
+-	"""
++        min_end_br_length = 4):
++    """
++    Clean skeleton graph: short terminal branches are removed and connecting 
++    branches are merged, end branch vertices are ordered (end point is point ID 
++    0 of cell). Medial thickness can be redefined based on length segments finally included in the skeleton. Unconnected components are
++    removed. 
++    
++    """
+@@ -37,6 +34,6 @@ def cleanSkeleton(line_data, poly_data=None, change_thick = True, \
+-	# remove 
+-	line_data = cleanBranches(line_data, min_end_br_length)
+-	if change_thick:
+-		line_data = tryNewThickness(line_data, poly_data)
+-	line_data = preprocessPolyData(line_data, mm_to_cm = False)
+-	br = getJunctionEndPointIds(line_data)
++    # remove 
++    line_data = cleanBranches(line_data, min_end_br_length)
++    if change_thick:
++        line_data = tryNewThickness(line_data, poly_data)
++    line_data = preprocessPolyData(line_data)
++    br = getJunctionEndPointIds(line_data)
+@@ -44,3 +41,3 @@ def cleanSkeleton(line_data, poly_data=None, change_thick = True, \
+-	# somehow the end branches need to be reversed again
+-	line_data = reverseEndBranches(line_data, br['end_points'],br['end_branches'])
+-	return line_data
++    # somehow the end branches need to be reversed again
++    line_data = reverseEndBranches(line_data, br['end_points'],br['end_branches'])
++    return line_data
+@@ -51,6 +48,6 @@ def reverseEndBranches(poly_line,end_points, end_branches):
+-	for i,br in enumerate(end_branches):
+-		branch = poly_line.GetCell(br)
+-		n_points = branch.GetNumberOfPoints()
+-		if branch.GetPointId(0) != end_points[i]:
+-			poly_line.ReverseCell(br)
+-	return poly_line
++    for i,br in enumerate(end_branches):
++        branch = poly_line.GetCell(br)
++        n_points = branch.GetNumberOfPoints()
++        if branch.GetPointId(0) != end_points[i]:
++            poly_line.ReverseCell(br)
++    return poly_line
+@@ -59,58 +56,58 @@ def mergeBranches(line_data):
+-	complete = False
+-	while not complete:
+-		complete = True
+-		merge_ids = getJunctionEndPointIds(line_data)['merge_ids']
+-		if not len(merge_ids):
+-			return line_data
+-		to_delete = []
+-		lines = []
+-		in_cells = vtk.vtkIdList()
+-		compid = 0
+-		for pid in merge_ids:
+-			line_data.GetPointCells(pid, in_cells)
+-			cids = [in_cells.GetId(0), in_cells.GetId(1)]
+-			for cid in cids:
+-				if cid in to_delete:
+-					complete = False
+-					compid = pid	
+-			if complete == False and compid == pid:
+-				compid = 0
+-				continue
+-
+-			np_l = [line_data.GetCell(cids[0]).GetNumberOfPoints(),\
+-				line_data.GetCell(cids[1]).GetNumberOfPoints()]
+-			new_line = vtk.vtkLine()
+-			new_line.GetPointIds().SetNumberOfIds(np_l[0] + np_l[1] -1)
+-			counter = 0
+-			for c in range(2):
+-				line = line_data.GetCell(cids[c])
+-				if c == 0:
+-					rev = (line.GetPointId(0) == pid)
+-				else:
+-					rev = (line.GetPointId(np_l[c]-1) == pid)
+-				if rev:
+-					rang = [np_l[c] -1 -i for i in range(np_l[c])]
+-				else:
+-					rang = [i for i in range(np_l[c])]
+-				if c == 1:
+-					rang.pop(0)
+-				for i in rang:
+-					new_line.GetPointIds().SetId(counter, line.GetPointId(i))
+-					counter += 1
+-				to_delete.append(cids[c])
+-			lines.append(new_line)
+-
+-		cells = vtk.vtkCellArray()
+-		
+-		for i in range(line_data.GetNumberOfCells()):
+-			if i not in to_delete:
+-				cells.InsertNextCell(line_data.GetCell(i))
+-		for i in range(len(lines)):
+-			cells.InsertNextCell(lines[i])
+-
+-		poly_new = vtk.vtkPolyData()
+-		poly_new.DeepCopy(line_data)
+-		poly_new.SetLines(cells)
+-		line_data = poly_new
+-		line_data = preprocessPolyData(line_data)
+-	return line_data
++    complete = False
++    while not complete:
++        complete = True
++        merge_ids = getJunctionEndPointIds(line_data)['merge_ids']
++        if not len(merge_ids):
++            return line_data
++        to_delete = []
++        lines = []
++        in_cells = vtk.vtkIdList()
++        compid = 0
++        for pid in merge_ids:
++            line_data.GetPointCells(pid, in_cells)
++            cids = [in_cells.GetId(0), in_cells.GetId(1)]
++            for cid in cids:
++                if cid in to_delete:
++                    complete = False
++                    compid = pid    
++            if complete == False and compid == pid:
++                compid = 0
++                continue
++
++            np_l = [line_data.GetCell(cids[0]).GetNumberOfPoints(),\
++                line_data.GetCell(cids[1]).GetNumberOfPoints()]
++            new_line = vtk.vtkLine()
++            new_line.GetPointIds().SetNumberOfIds(np_l[0] + np_l[1] -1)
++            counter = 0
++            for c in range(2):
++                line = line_data.GetCell(cids[c])
++                if c == 0:
++                    rev = (line.GetPointId(0) == pid)
++                else:
++                    rev = (line.GetPointId(np_l[c]-1) == pid)
++                if rev:
++                    rang = [np_l[c] -1 -i for i in range(np_l[c])]
++                else:
++                    rang = [i for i in range(np_l[c])]
++                if c == 1:
++                    rang.pop(0)
++                for i in rang:
++                    new_line.GetPointIds().SetId(counter, line.GetPointId(i))
++                    counter += 1
++                to_delete.append(cids[c])
++            lines.append(new_line)
++
++        cells = vtk.vtkCellArray()
++        
++        for i in range(line_data.GetNumberOfCells()):
++            if i not in to_delete:
++                cells.InsertNextCell(line_data.GetCell(i))
++        for i in range(len(lines)):
++            cells.InsertNextCell(lines[i])
++
++        poly_new = vtk.vtkPolyData()
++        poly_new.DeepCopy(line_data)
++        poly_new.SetLines(cells)
++        line_data = poly_new
++        line_data = preprocessPolyData(line_data)
++    return line_data
+@@ -119,8 +116,8 @@ def deleteShortEndBranches(line_data, end_branches, min_points = 4):
+-	in_cells = vtk.vtkIdList()
+-	for br in end_branches:
+-		cel = line_data.GetCell(br)
+-		num_p = cel.GetNumberOfPoints()
+-		if num_p < min_points:
+-			line_data.DeleteCell(br)
+-	line_data.RemoveDeletedCells()
+-	return line_data
++    in_cells = vtk.vtkIdList()
++    for br in end_branches:
++        cel = line_data.GetCell(br)
++        num_p = cel.GetNumberOfPoints()
++        if num_p < min_points:
++            line_data.DeleteCell(br)
++    line_data.RemoveDeletedCells()
++    return line_data
+@@ -130,2 +127,2 @@ def tryNewThickness(line_data, poly_data):
+-	
+-	n_points = line_data.GetNumberOfPoints()
++    
++    n_points = line_data.GetNumberOfPoints()
+@@ -133,3 +130,3 @@ def tryNewThickness(line_data, poly_data):
+-	point_locator = vtk.vtkPointLocator()
+-	point_locator.SetDataSet(poly_data)
+-	point_locator.BuildLocator()
++    point_locator = vtk.vtkPointLocator()
++    point_locator.SetDataSet(poly_data)
++    point_locator.BuildLocator()
+@@ -137,7 +134,7 @@ def tryNewThickness(line_data, poly_data):
+-	medial_thickness = np.zeros(n_points)
+-	for i in range(n_points):
+-		skel_point_loc = line_data.GetPoint(i)
+-		poly_id = point_locator.FindClosestPoint(skel_point_loc)
+-		poly_point_loc = poly_data.GetPoint(poly_id)
+-		dist = vtk.vtkMath.Distance2BetweenPoints(skel_point_loc, poly_point_loc)
+-		medial_thickness[i] = m.sqrt(dist) * 2
++    medial_thickness = np.zeros(n_points)
++    for i in range(n_points):
++        skel_point_loc = line_data.GetPoint(i)
++        poly_id = point_locator.FindClosestPoint(skel_point_loc)
++        poly_point_loc = poly_data.GetPoint(poly_id)
++        dist = vtk.vtkMath.Distance2BetweenPoints(skel_point_loc, poly_point_loc)
++        medial_thickness[i] = m.sqrt(dist) * 2
+@@ -145,12 +142,2 @@ def tryNewThickness(line_data, poly_data):
+-	line_data.GetPointData().SetScalars(nps.numpy_to_vtk(medial_thickness))
+-	return line_data
+-
+-def cleanBranches(line_data, min_end_br_length = 4):
+-	
+-	br = getJunctionEndPointIds(line_data)
+-	end_br = br['end_branches']
+-	end_p = br['end_points']	
+-	line_data = reverseEndBranches(line_data, end_p, end_br)
+-	line_data = deleteShortEndBranches(line_data, end_br, min_end_br_length)
+-	line_data = mergeBranches(line_data)
+-	return line_data
++    line_data.GetPointData().SetScalars(nps.numpy_to_vtk(medial_thickness))
++    return line_data
+@@ -160,2 +147,2 @@ def preprocessPolyData(poly_data):
+-	"""
+-	Removes unconnected components (artefacts) from vtkPolyData object.
++    """
++    Removes unconnected components (artefacts) from vtkPolyData object.
+@@ -163,3 +150,3 @@ def preprocessPolyData(poly_data):
+-	Args:
+-		poly_data (vtk.vtkPolyData): mesh or graph with artefacts
+-		mm_to_cm (bool): mesh coordinates are in mm but should be cm
++    Args:
++        poly_data (vtk.vtkPolyData): mesh or graph with artefacts
++        mm_to_cm (bool): mesh coordinates are in mm but should be cm
+@@ -167,7 +154,7 @@ def preprocessPolyData(poly_data):
+-	Returns:
+-		vtk.vtkPolyData: mesh without artifacts
+-	"""
+-	
+-	poly_large = getLargestClosedSurface(poly_data)
+-	poly_clean = cleanPolyData(poly_large)
+-	return poly_clean
++    Returns:
++        vtk.vtkPolyData: mesh without artifacts
++    """
++    
++    poly_large = getLargestClosedSurface(poly_data)
++    poly_clean = cleanPolyData(poly_large)
++    return poly_clean
+@@ -176,15 +163,15 @@ def getLargestClosedSurface(poly_data):
+-	"""
+-	Takes the largest connected component of a vtkPolyData object.
+-	
+-	Args:
+-		poly_data (vtk.vtkPolyData): mesh or graph with unconnected components
+-
+-	Returns:
+-		vtk.vtkPolyData: mesh or graph single connected component
+-		
+-	"""
+-	conn_filter = vtk.vtkPolyDataConnectivityFilter()
+-	conn_filter.SetExtractionModeToLargestRegion()
+-	conn_filter.SetInputData(poly_data)
+-	conn_filter.Update()
+-	return conn_filter.GetOutput()
++    """
++    Takes the largest connected component of a vtkPolyData object.
++    
++    Args:
++        poly_data (vtk.vtkPolyData): mesh or graph with unconnected components
++
++    Returns:
++        vtk.vtkPolyData: mesh or graph single connected component
++        
++    """
++    conn_filter = vtk.vtkPolyDataConnectivityFilter()
++    conn_filter.SetExtractionModeToLargestRegion()
++    conn_filter.SetInputData(poly_data)
++    conn_filter.Update()
++    return conn_filter.GetOutput()
+@@ -193,13 +180,13 @@ def cleanPolyData(polydata):
+-	"""
+-	Removes double and unused points and degenerate cells.
+-
+-	Args:
+-		poly_data (vtk.vtkPolyData): mesh or graph
+-
+-	Returns:
+-		vtk.vtkPolyData: mesh or graph where all vertices are used
+-	"""
+-	clean_filter = vtk.vtkCleanPolyData()
+-	clean_filter.SetInputData(polydata)
+-	clean_filter.Update()
+-	return clean_filter.GetOutput()
++    """
++    Removes double and unused points and degenerate cells.
++
++    Args:
++        poly_data (vtk.vtkPolyData): mesh or graph
++
++    Returns:
++        vtk.vtkPolyData: mesh or graph where all vertices are used
++    """
++    clean_filter = vtk.vtkCleanPolyData()
++    clean_filter.SetInputData(polydata)
++    clean_filter.Update()
++    return clean_filter.GetOutput()
+diff --git a/skelCodes/skeletonization.py b/skelCodes/skeletonization.py
+index b7e366b..cc5375a 100644
+--- a/skelCodes/skeletonization.py
++++ b/skelCodes/skeletonization.py
+@@ -2 +2,5 @@ import vtk
+-from pre_skel import *
++import time
++from skelCodes.pre_skel import *
++from helpers.load_data import *
++from skelCodes.extract_lines import *
++import subprocess
+@@ -5,6 +9,6 @@ def makeVoxelSkeleton(in_dir, filename):
+-	
+-	skel_process = subprocess.Popen([".skel_itk",in_dir,filename])
+-	skel_process.communicate()
+-	voxel_skel = readMHD(f"{filename}_skel", in_dir)
+-	
+-	return voxel_skel
++    
++    skel_process = subprocess.Popen(["skel_itk",in_dir,filename])
++    skel_process.communicate()
++    voxel_skel = readMHD(f"{filename}_skel", in_dir)
++    
++    return voxel_skel
+@@ -12,6 +16,6 @@ def makeVoxelSkeleton(in_dir, filename):
+-def skeletonize(poly_data, spacing = .05, skel_dir = vtk.DIR_TEMP):
+-	"""
+-	
+-	"""
+-	#smooth poly_data
+-	smoothPolyData(poly_data)
++def skeletonize(poly_data, skel_path, spacing = .05):
++    """
++    
++    """
++    #smooth poly_data
++    smoothPolyData(poly_data)
+@@ -19,4 +23,4 @@ def skeletonize(poly_data, spacing = .05, skel_dir = vtk.DIR_TEMP):
+-	# voxelize smooth polydata
+-	vox_img = voxelizePolyData(poly_data, spacing = spacing)
+-	fn = 'vox'
+-	writeMHD(fn, vox_img, skel_dir)
++    # voxelize smooth polydata
++    vox_img = voxelizePolyData(poly_data, spacing = spacing)
++    fn = 'vox'
++    writeMHD(fn, vox_img, skel_path)
+@@ -24,5 +28,3 @@ def skeletonize(poly_data, spacing = .05, skel_dir = vtk.DIR_TEMP):
+-	print('voxelized')
+-	time.sleep(10)
+-	del vox_img
+-	# extract voxel skeleton
+-	voxel_skel = makeVoxelSkeleton(skel_dir, fn)
++    print('voxelized')
++    # time.sleep(10)
++    del vox_img
+@@ -30,6 +32,2 @@ def skeletonize(poly_data, spacing = .05, skel_dir = vtk.DIR_TEMP):
+-	# make a VTK line object of voxel skeleton
+-	sg = SkelGraph()
+-	sg.SetInputData(voxel_skel)
+-	
+-	sg.Update()
+-	return sg.GetOutput()
++    # extract voxel skeleton
++    voxel_skel = makeVoxelSkeleton(skel_path, fn)
+@@ -36,0 +35,11 @@ def skeletonize(poly_data, spacing = .05, skel_dir = vtk.DIR_TEMP):
++    # make a VTK line object of voxel skeleton
++    sg = SkelVoxToGraph()
++    sg.SetInputData(voxel_skel)
++    sg.Update()
++    
++    return sg.GetOutput()
++
++# 	sg = SkelGraph()
++# 	sg.SetInputData(voxel_skel)
++# 	
++# 	sg.Update()
+\ No newline at end of file
+diff --git a/helpers/itk_skel/test/src/CMakeLists.txt b/helpers/itk_skel/test/src/CMakeLists.txt
+index ec34c83..4711df8 100644
+--- a/helpers/itk_skel/test/src/CMakeLists.txt
++++ b/helpers/itk_skel/test/src/CMakeLists.txt
+@@ -10,0 +11,2 @@ project(skel_itk)
++list(APPEND CMAKE_PREFIX_PATH "C:\\ITK-master\\build")
++

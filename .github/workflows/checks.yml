@@ -1,0 +1,57 @@
+name: checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  models:
+    name: Models (Python 3.13) - compile and smoke test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: environment-models.yml
+          cache-environment: true
+      - name: Compile all model scripts
+        run: python -m compileall -q 05_branch_transport_model_1p5d 06_branching_lattice_model_2d
+      - name: Smoke test the 1.5D solvers (short runs)
+        env:
+          MPLBACKEND: Agg
+          OSSICLE_OUT: ${{ runner.temp }}/out
+        run: |
+          python - <<'EOF'
+          import importlib.util, pathlib, tempfile
+          def load(p, n):
+              s = importlib.util.spec_from_file_location(n, p); m = importlib.util.module_from_spec(s); s.loader.exec_module(m); return m
+          d = pathlib.Path(tempfile.mkdtemp()); f = d / "exp_parameters.txt"
+          f.write_text("D2 = 0.01\nk4 = 0.1\nk5 = 100.0\nepsilon = 100.0\ncsat = 0.0\nvm = 0.5\nm_dot_0 = 0.01\n"
+                       "delta_t = 0.01\ndelta_x = 0.05\nN = 5\nw0 = 1.0\nrho = 2.71\nl_g = 0.5\n")
+          nd = load("05_branch_transport_model_1p5d/para_sweep_non_dim.py", "nd").ReactionDiffusionSimulator(str(f))
+          nd.run_simulation_nd(20000)
+          dim = load("05_branch_transport_model_1p5d/para_sweep_run.py", "dim").ReactionDiffusionSimulator(str(f))
+          dim.run_simulation_dim(20000)
+          L = load("05_branch_transport_model_1p5d/phase_plot_final_length_v2.py", "L").terminal_length(5.0, 0.2)
+          assert nd.N > 5 and dim.N > 5 and L > 0
+          print("ok: branch lengths", nd.l_bar * nd.l0, dim.l, "terminal length", L)
+          EOF
+
+  analysis:
+    name: Analyses (Python 3.7) - environment builds and scripts compile
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: environment-analysis.yml
+          cache-environment: true
+      - name: Compile all analysis scripts
+        run: python -m compileall -q 01_microct_morphometrics 02_image_morphometrics_2d 03_vesicle_transport 04_drug_perturbations 07_lattice_schematics

@@ -1,0 +1,48 @@
+# This repository contains code only. Data and generated outputs are never committed.
+data/*
+!data/README.md
+outputs/
+
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# Editors / OS
+.vs/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Data and output formats produced by the scripts
+*.gpickle
+*.pkl
+*.pickle
+*.npy
+*.npz
+*.vtk
+*.vtp
+*.vtu
+*.stl
+*.obj
+*.ply
+*.mhd
+*.zraw
+*.tif
+*.tiff
+*.bmp
+*.czi
+*.nd2
+*.avi
+*.mp4
+*.mov
+*.gif
+*.png
+*.jpg
+*.svg
+*.html
+*.csv
+*.xlsx
+*.exe

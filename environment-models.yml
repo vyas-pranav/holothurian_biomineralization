@@ -1,0 +1,21 @@
+# Environment for the two growth models (folders 05 and 06).
+# The 1.5D transport model last ran on Python 3.13; the 2D branching model was
+# written for Python 3.7 and runs unchanged here except that graphs are saved
+# with pickle instead of the removed networkx gpickle helpers.
+#
+#   conda env create -f environment-models.yml
+#   conda activate ossicle-models
+name: ossicle-models
+channels:
+  - conda-forge
+dependencies:
+  - python=3.13
+  - numpy=2.5
+  - scipy=1.18
+  - matplotlib=3.11
+  - pandas=3.0
+  - networkx=3.6
+  - shapely=2.1
+  - pillow=12.3
+  - py-opencv=5.0
+  - pyvista=0.48

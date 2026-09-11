@@ -1,0 +1,378 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2022-2025 Pranav Vyas
+"""Mean curvature of an ossicle's fitted base surface (libigl).
+
+Code release for Vyas et al., "Cellular construction of topologically complex
+biomineral lattices in holothurians".
+
+Figure panels : Fig. 2A (left)
+What it does  : Loads the remeshed base surface of an aligned ossicle (active: file
+                index 8), computes principal curvatures with libigl (active radius = 1)
+                and renders the base surface coloured by mean curvature (viridis, full
+                data range) over the translucent ossicle (violet, parallel projection).
+                Commented cells record the saving of per-ossicle mean/Gaussian curvature
+                arrays (aligned/curvature/{mean,gauss}/*_curv50.npy) and of the
+                per-ossicle averages avg_mean_curvature50.npy /
+                avg_gaussian_curvature50.npy.
+Inputs        : microct/animal_1/extracted_ossicles/aligned/{vtk,
+                skeleton/<ossicle>/..., base/vtk/<ossicle>.vtk},
+                microct/animal_1/extracted_ossicles/Data Calculated/{loc_file_id.txt,
+                loc_file_id_table.txt}
+Outputs       : interactive PyVista window (the .npy writes are commented out)
+Environment   : environment-analysis.yml (Python 3.7)
+Run           : python curvature_calc.py
+"""
+
+from vedo import *
+import vedo
+import networkx as nx
+import numpy as np
+from sklearn.decomposition import PCA
+import re
+import pyvista as pv
+from scipy import interpolate
+import pyacvd
+import igl
+import matplotlib as mpl
+
+# --- USER PATHS -------------------------------------------------------------
+# Point OSSICLE_DATA / OSSICLE_OUT at your copies (see data/README.md).
+import os
+from pathlib import Path
+try:
+    _HERE = Path(__file__).resolve()
+except NameError:  # interactive (e.g. Spyder cell) execution
+    _HERE = Path.cwd().resolve() / "_"
+REPO_ROOT = next((p for p in _HERE.parents if (p / "CITATION.cff").exists()), _HERE.parent)
+DATA_ROOT = Path(os.environ.get("OSSICLE_DATA", REPO_ROOT / "data"))
+OUT_ROOT = Path(os.environ.get("OSSICLE_OUT", REPO_ROOT / "outputs"))
+# ----------------------------------------------------------------------------
+
+pv.global_theme.background = 'white'
+pv.global_theme.font.color = 'black'
+pv.global_theme.font.family = 'arial'
+pv.global_theme.camera = {'position': [-1, -0.3, 0],'viewup': [0, 0, -1]} #[-1, -0.3, 0] [0,0,1]
+
+#%%
+
+
+
+def graph_to_vedo_mesh(H):
+    #reorder node ids so that the nodes now are numbered as consecutive integers
+    G = nx.convert_node_labels_to_integers(H)
+
+    # Get the node positions from the graph
+    pos = nx.get_node_attributes(G, 'pos')
+
+    pos_list= []
+    for node in G.nodes():
+        pos_value = G.nodes[node]['pos']
+        pos_list.append((pos_value[0],pos_value[1],pos_value[2]))
+
+
+    # Extract the edges from the graph
+    edge_list = list(G.edges())
+
+    gmesh = vedo.Mesh([pos_list, edge_list])
+
+    return gmesh
+
+
+def unit_vec(vector):
+  """Converts a vector to a unit vector.
+
+  Args:
+    vector: A 1-D numpy array.
+
+  Returns:
+    The unit vector of the input vector.
+  """
+  magnitude = np.linalg.norm(vector)
+  if magnitude == 0:
+    return np.zeros_like(vector)
+  else:
+    return vector / magnitude
+
+def angle_between(v1, v2):
+    """ Returns the angle in degrees between vectors 'v1' and 'v2'::
+    """
+    v1_u = unit_vec(v1)
+    v2_u = unit_vec(v2)
+    return 180/np.pi*np.arccos(np.clip(np.dot(v1_u, v2_u), -1.0, 1.0))
+
+
+def rotation_matrix(a, b):
+    """
+    Find the rotational transformation matrix between two sets of orthogonal axes represented as unit vectors.
+
+    Parameters
+    ----------
+    a : list of numpy arrays
+        The first set of unit vectors.
+    b : list of numpy arrays
+        The second set of unit vectors.
+
+    Returns
+    -------
+    R : numpy array
+        The rotational transformation matrix.
+    """
+    R = np.zeros((len(a), len(b)))
+    for i in range(len(a)):
+        for j in range(len(b)):
+            R[i, j] = np.dot(a[i], b[j])
+    return R
+
+
+def surface_fitting_pts(fit_pos):
+
+    x = fit_pos[:,0]
+    y = fit_pos[:,1]
+    z = fit_pos[:,2]
+
+    fit_pos_xy = np.zeros((len(x),2))
+    for ii in range(len(x)):
+        fit_pos_xy[ii,0] = fit_pos[ii,0]  
+        fit_pos_xy[ii,1] = fit_pos[ii,1]  
+
+    N = 100
+    fac = 2
+    grid_x, grid_y = np.mgrid[-0.05*fac:0.05*fac:N*1j*fac, -0.05*fac:0.05*fac:N*1j*fac]
+    f_dg = interpolate.griddata(fit_pos_xy, z, (grid_x, grid_y), method='linear')
+
+    good_ind = np.argwhere(np.isnan(f_dg)==False)
+
+    ctr = 0
+    new_pos_list = []
+    for ind in good_ind.tolist():
+         new_pos_list.append([grid_x[ind[0],ind[1]], grid_y[ind[0],ind[1]], f_dg[ind[0],ind[1]]])
+
+    new_fit_pos = np.array(new_pos_list)
+
+    return new_fit_pos
+
+
+def remesh_func(mesh, n_subdivide, n_cluster):
+    clus = pyacvd.Clustering(mesh)
+    # mesh is not dense enough for uniform remeshing
+    clus.subdivide(n_subdivide)
+    clus.cluster(n_cluster)
+
+    # plot clustered cow mesh
+    # clus.plot()
+
+    # remesh
+    remesh = clus.create_mesh()
+
+    return remesh
+
+
+def load_data(ii):
+    ossicle = load(files[ii])
+    # ossicle.lw(0.05).c('pink6').alpha(0.5)
+    vox_path = os.path.join(skel_paths[ii],"vox.mhd")
+    voxel_vol = load(vox_path)
+
+    skel_path = os.path.join(skel_paths[ii],"post15_skel_line.vtk")
+    cl_skel_path = os.path.join(skel_paths[ii],"clean_skel_line.vtk")
+    skeleton = load(skel_path)
+    cl_skeleton = load(cl_skel_path)
+
+    return ossicle, voxel_vol, skeleton, cl_skeleton
+
+def load_graphs(ii):
+    full_G = nx.read_gpickle(os.path.join(skel_paths[ii],"full_G.gpickle"))
+    clean_full_G = nx.read_gpickle(os.path.join(skel_paths[ii],"clean_full_G.gpickle"))
+    simple_G = nx.read_gpickle(os.path.join(skel_paths[ii],"simple_G.gpickle")) 
+    clean_simple_G = nx.read_gpickle(os.path.join(skel_paths[ii],"clean_simple_G.gpickle")) 
+
+    return full_G, clean_full_G, simple_G, clean_simple_G
+
+
+#align ossicle 60 (170 id) to the z axis
+def get_base_mesh():
+    ii = 170
+
+    ossicle, voxel_vol, skeleton, cl_skeleton = load_data(ii)
+
+    full_G, clean_full_G, simple_G, clean_simple_G = load_graphs(ii)
+
+    G = clean_simple_G
+
+    for u, v, data in G.edges(data=True):
+        if (data['branch_degree']==0):
+            start_edge = [u,v]
+
+    base_nodes = set()
+    for node in start_edge:
+        base_nodes = base_nodes.union(set(G.neighbors(node)))
+
+    base_pos_list = []
+    for node in base_nodes:
+        base_pos_list.append(G.nodes[node]['pos'])
+    base_pos = np.array(base_pos_list)
+
+    # find the start point and volumetric centroid
+    start_pt = (G.nodes[start_edge[0]]['pos'] + G.nodes[start_edge[1]]['pos'])/2 
+
+    # perform PCA on the base position coordinates 
+    pca = PCA(n_components = 3)
+    pca.fit(base_pos)
+
+    ossicle_align = ossicle.clone().shift(dx= -start_pt[0], dy = -start_pt[1],dz = -start_pt[2])
+    rot_axis = np.cross(unit_vec(- pca.components_[2]), np.array([0,0,1]))
+    rot_angle = angle_between(unit_vec(- pca.components_[2]), np.array([0,0,1]))
+    ossicle_align.rotate(rot_angle, rot_axis)
+
+    ossicle_align.write(os.path.join(type_dir, 'aligned', 'stl_files', file_names[ii][0:-4]+'.stl'))
+
+    return ossicle_align
+
+
+#%%
+base_dir =str(DATA_ROOT / "microct" / "animal_1" / "extracted_ossicles")
+type_dir =str(DATA_ROOT / "microct" / "animal_1" / "extracted_ossicles" / "aligned")
+indir = str(DATA_ROOT / "microct" / "animal_1" / "extracted_ossicles" / "aligned" / "vtk")
+skeldir = str(DATA_ROOT / "microct" / "animal_1" / "extracted_ossicles" / "aligned" / "skeleton")
+datadir = str(DATA_ROOT / "microct" / "animal_1" / "extracted_ossicles" / "Data Calculated")
+basemeshdir = str(DATA_ROOT / "microct" / "animal_1" / "extracted_ossicles" / "aligned" / "base" / "vtk")
+curv_dir = str(DATA_ROOT / "microct" / "animal_1" / "extracted_ossicles" / "aligned" / "curvature")
+
+
+plt3d = Plotter(bg2='gray2')#, interactive=True) # screen size
+all_file_names = os.listdir(indir)
+file_names = [f for f in all_file_names if f.endswith('.vtk')]
+file_names.sort()
+files = [os.path.join(indir,f) for f in file_names]
+skel_paths = [os.path.join(skeldir,f) for f in file_names]
+
+base_mesh_paths = [os.path.join(basemeshdir,f[:-4]+'.obj') for f in file_names]
+
+
+n_files = len(file_names)
+file_id = []
+for ii in range(n_files):
+    txt = file_names[ii]
+    num = [int(s) for s in re.findall(r'\d+',txt)]
+    file_id.append(num[0])
+
+
+with open(os.path.join(datadir,'loc_file_id.txt')) as txtfile:
+    loc_file_id = list(map(int, txtfile.read().split('\n')))
+
+with open(os.path.join(datadir,'loc_file_id_table.txt')) as txtfile:
+    loc_file_id_table = list(map(int, txtfile.read().split('\n')))
+
+
+pl = pv.Plotter(off_screen=False)
+# #%%
+
+meshes = []
+for ii in [8]:  #[loc_file_id[4]]: #range(n_files):      print(ii, files[ii])
+    print(ii)
+    jj = loc_file_id_table.index(ii)
+    ossicle, voxel_vol, skeleton, cl_skeleton = load_data(ii)
+    # meshes.append(ossicle.lw(1))
+    rem_recon_mesh = load(os.path.join(basemeshdir, file_names[ii]))
+    #use libigl library to calculate curvature as it has a variable radius option
+    v = rem_recon_mesh.points()
+    f = np.array(rem_recon_mesh.cells())
+    pd1, pd2, pv1, pv2 = igl.principal_curvature(v, f, radius=1)    
+    mean_curv = (pv1+pv2)/2
+    gauss_curv = pv1*pv2
+
+    # with open(os.path.join(curv_dir, 'mean', file_names[ii][:-4]+'_mean_curv50.npy'), 'wb') as gg:
+    #     np.save(gg, mean_curv)
+
+    # with open(os.path.join(curv_dir, 'gauss', file_names[ii][:-4]+'_gauss_curv50.npy'), 'wb') as gg:
+    #     np.save(gg, gauss_curv)
+
+    rem_recon_mesh.cmap('viridis', (pv1+pv2)/2).add_scalarbar(title='mean curvature')
+
+    # meshes.append(fit_sph_mesh)
+    # meshes.append(surf_fit_sph_mesh)        
+    meshes.append(rem_recon_mesh)
+
+    # # Get the mesh from the graph
+    # gmesh = graph_to_vedo_mesh(G)
+    # gmesh.lw(5)
+    # gmesh2 = gmesh.clone()
+    # gmesh2.ps(5).c('r')
+
+    # label = Text3D(file_id[ii], 0.01+center_pt, s=0.005, depth=0.5, c="g")
+    # label.follow_camera()
+
+    # meshes.extend([gmesh,gmesh2])
+    # meshes.extend([ossicle.alpha(0.5), start_mesh, center_mesh])
+    # meshes.append(skeleton)
+    # # # meshes.append(voxel_vol)
+    # meshes.append(label)
+
+    # # plane_mesh = vedo.Plane()
+    # meshes.append(ossicle_align)
+    # meshes.append(ossicle_base.c('orange'))
+
+    pv_ossicle = pv.wrap(ossicle.polydata())
+    # pv_fit_sp = pv.wrap(fit_sph_mesh.polydata())
+    # pv_surf_fit_sp = pv.wrap(surf_fit_sph_mesh.polydata())
+    pv_rem_recon = pv.wrap(rem_recon_mesh.polydata())
+
+    pv_rem_recon.point_data.set_scalars(mean_curv, 'mean curvature')
+    # pv_rem_recon.point_data.set_scalars(gauss_curv, 'gaussian curvature')
+
+    cmap = mpl.cm.get_cmap('viridis')
+
+    #get max and min of mean curvature
+    max_mean_curv = np.max(mean_curv)
+    min_mean_curv = np.min(mean_curv)
+
+    # rgba = cmap(1/22 + 1/11)
+    # osc_color = pv.Color([rgba[0], rgba[1], rgba[2] ])
+    pl.add_mesh(pv_ossicle, color='violet', opacity = 0.25)#osc_color)#, specular=1.0, specular_power=10)
+    # pl.add_mesh(pv_fit_sp, color='red')#osc_color)#, specular=1.0, specular_power=10)
+    # pl.add_mesh(pv_surf_fit_sp, color='grey')#osc_color)#, specular=1.0, specular_power=10)
+    # pl.add_mesh(pv_rem_recon, cmap=cmap, clim = [-50,50])#osc_color)#, specular=1.0, specular_power=10)
+    pl.add_mesh(pv_rem_recon, cmap=cmap, clim = [min_mean_curv,max_mean_curv])#, style='wireframe')#osc_color)#, specular=1.0, specular_power=10)
+
+
+# avg_mean_curvature = np.zeros(n_files)
+# avg_gaussian_curvature = np.zeros(n_files)
+
+# ctr = 0
+# for jj in range(213): #ii in loc_file_id[:]:  #[loc_file_id[4]]: #range(n_files):      print(ii, files[ii])
+#     ii = loc_file_id[jj]
+#     f_name = file_names[ii][:-4]+'_mean_curv50.npy'
+#     if os.path.isfile(os.path.join(curv_dir, 'mean', f_name)):
+#         with open(os.path.join(curv_dir, 'mean', f_name), 'rb') as f:
+#             mean_curv = np.load(f)
+
+#         f_name = file_names[ii][:-4]+'_gauss_curv50.npy'
+#         with open(os.path.join(curv_dir, 'gauss', f_name), 'rb') as f:
+#             gauss_curv = np.load(f)
+
+#         avg_mean_curvature[jj] = np.mean(mean_curv)
+#         avg_gaussian_curvature[jj] = np.mean(gauss_curv)
+
+#     ctr = ctr+1
+
+
+# with open('avg_mean_curvature50.npy', 'wb') as gg:
+#     np.save(gg, avg_mean_curvature)
+
+# with open('avg_gaussian_curvature50.npy', 'wb') as gg:
+#     np.save(gg, avg_gaussian_curvature)
+
+
+
+# show the meshes
+# vedo.show(meshes, axes=1)
+
+
+# show the meshes
+
+pl.parallel_projection = True
+pl.camera.roll = 90.0
+# pl.screenshot('25_side.png', transparent_background= True, window_size=(10000,10000))
+pl.show()
+
+#%%

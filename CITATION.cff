@@ -1,0 +1,40 @@
+cff-version: 1.2.0
+message: >-
+  If you use this code, please cite the article below (preferred citation)
+  and, where appropriate, this software release.
+title: >-
+  Code for "Cellular construction of topologically complex biomineral
+  lattices in holothurians"
+type: software
+authors:
+  - family-names: Vyas
+    given-names: Pranav
+    affiliation: Bioengineering Department, Stanford University
+license: GPL-3.0-or-later
+repository-code: "https://github.com/vyas-pranav/holothurian-ossicle-lattices"
+version: 1.0.0
+keywords:
+  - biomineralization
+  - holothurian ossicles
+  - morphogenesis
+  - micro-CT morphometrics
+  - branching networks
+  - advection-reaction-diffusion model
+preferred-citation:
+  type: article
+  title: >-
+    Cellular construction of topologically complex biomineral lattices in
+    holothurians
+  status: submitted
+  journal: Cell
+  authors:
+    - family-names: Vyas
+      given-names: Pranav
+    - family-names: Brannon
+      given-names: Charlotte
+    - family-names: Formery
+      given-names: Laurent
+    - family-names: Lowe
+      given-names: Christopher J.
+    - family-names: Prakash
+      given-names: Manu
