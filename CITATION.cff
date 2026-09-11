@@ -11,7 +11,7 @@ authors:
     given-names: Pranav
     affiliation: Bioengineering Department, Stanford University
 license: GPL-3.0-or-later
-repository-code: "https://github.com/vyas-pranav/holothurian-ossicle-lattices"
+repository-code: "https://github.com/vyas-pranav/holothurian_biomineralization"
 version: 1.0.0
 keywords:
   - biomineralization
